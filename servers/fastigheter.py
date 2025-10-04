@@ -14,11 +14,13 @@ from fastmcp import FastMCP
 
 # Import all tools related to property management (fastighetsförvaltning)
 from tools.skatteverket.typkoder_taxeringsenheter import taxeringsenhet_typkod_mcp
+from tools.skatteverket.fastighetsskatt_avgifter import fastighetsskatt_avgifter_mcp
 
 FASTIGHET_MCP = FastMCP("FastighetsforvaltningService")
 
 # Setup all related tools
 FASTIGHET_MCP.mount(taxeringsenhet_typkod_mcp, prefix="skatteverket")
+FASTIGHET_MCP.mount(fastighetsskatt_avgifter_mcp, prefix="skatteverket")
 
 
 # TODO: fix imports of tools, in order to support stdio mode
