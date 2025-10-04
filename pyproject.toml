@@ -5,6 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "fastmcp>=2.12.4",
     "httpx>=0.28.1",
-    "mcp[cli]>=1.16.0",
 ]
+
+[scripts]
+debug-fastighet = "uv run mcp dev ./fastigheter/main.py"
