@@ -16,12 +16,14 @@ from fastmcp import FastMCP
 # Import all tools related to property management (fastighetsförvaltning)
 from tools.riksdagen.dokument import dokumentlist_dokument_mcp
 from tools.riksdagen.ledamot import ledamot_mcp
+from tools.riksdagen.kalender import kalender_handelser_mcp
 
 RIKSDAGEN_MCP = FastMCP("RiksdagenService")
 
 # Setup all related tools
 RIKSDAGEN_MCP.mount(dokumentlist_dokument_mcp, prefix="riksdagen")
 RIKSDAGEN_MCP.mount(ledamot_mcp, prefix="riksdagen")
+RIKSDAGEN_MCP.mount(kalender_handelser_mcp, prefix="riksdagen")
 
 
 # TODO: fix imports of tools, in order to support stdio mode
