@@ -1,31 +1,53 @@
-# Repository Guidelines for `mcp-dataportal`
+# Repository Guidelines
 
-This repository hosts experimental [Model Context Protocol (MCP)](https://modelcontextprotocol.io/docs/develop/build-server) services that expose Swedish open-data resources through [FastMCP](https://gofastmcp.com/getting-started/welcome) and Starlette. The guidance below establishes repo-wide expectations for future agents and contributors.
+This repository hosts experimental Model Context Protocol (MCP) services that expose Swedish open‑data via FastMCP and Starlette. Use this guide to contribute consistent, testable changes.
 
-## General Principles
-- Follow the MCP Python SDK's conventions for structuring servers, resources, prompts, and tools as outlined in the official SDK README.<sup>[1](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file)</sup>
-- Treat the Starlette app in `main.py` as an ASGI composition layer; keep business logic inside the `servers/` and `tools/` packages.
-- Prefer declarative descriptions and metadata for MCP resources and tools so they can be surfaced cleanly in MCP inspectors.
+## Project Structure & Module Organization
 
-## Python Style and Quality
-- Target Python 3.11+ and adhere to PEP 8 formatting. Use type hints for all public functions and methods.
-- Organize imports using the standard library / third-party / local grouping pattern.
-- Include docstrings for new modules, classes, and complex functions that clarify the purpose of the tool or resource, especially when referencing Swedish government data sources.
-- When adding logic that calls network APIs, wrap request code with clear error handling and timeouts; surface informative MCP errors instead of raw stack traces.
+- `main.py` — ASGI composition layer; mount MCP servers and routes only.
+- `servers/` — MCP servers, resources, prompts, and tool factories (per data source).
+- `tools/` — Shared tool implementations/helpers reusable across servers.
+- `tests/` — Pytest suite; mirror package structure (e.g., `tests/servers/test_skatteverket.py`).
+- `README.md` — Quick start and dataset discovery notes.
 
-## FastMCP and MCP-Specific Guidance
-- Expose new functionality via FastMCP factories (`FastMCP(...)`) and mount tools/resources using descriptive prefixes (e.g., `skatteverket`).
-- Use Structured Output schemas when returning complex data from tools so clients can validate responses.<sup>[1](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#structured-output)</sup>
-- Prefer asynchronous I/O (e.g., `async def` with `httpx.AsyncClient`) when integrating with external APIs, aligning with Starlette and FastMCP best practices.
-- Document any new tools or resources within their module docstrings, including the authoritative data source (link or dataset ID) from dataportal.se when applicable.
+Keep business logic inside `servers/` and `tools/`; keep `main.py` thin.
 
-## Testing and Local Development
-- Use [`uv`](https://docs.astral.sh/uv/) for dependency management. Add new runtime or dev dependencies via `uv add` and commit the updated `uv.lock`.
-- Provide lightweight integration tests for non-trivial tools/resources when feasible. Prefer pytest and locate tests under a top-level `tests/` package.
-- For manual verification, run the Starlette app with `uvicorn main:app --reload` and inspect mounted MCP servers via `npx @modelcontextprotocol/inspector`.
+## Build, Test, and Development Commands
 
-## Documentation and Communication
-- Update `README.md` or create tool-specific markdown references whenever you add notable functionality so downstream agents can discover available datasets.
-- Keep module-level TODOs actionable; prefer filing issues over leaving vague comments.
+- `uv sync` — Install/resolve dependencies from `pyproject.toml` into `.venv`.
+- `uv add <package>` — Add a dependency and update `uv.lock`.
+- `uv run uvicorn main:app --reload` — Run the Starlette app for manual inspection.
+- `uv run pytest -q` — Run tests. Add `-k <pattern>` for focused runs.
+- `npx @modelcontextprotocol/inspector` — Inspect mounted MCP tools/resources locally.
 
-These conventions apply to the entire repository. Add additional `AGENTS.md` files in subdirectories if you need more specific guidance for particular modules or tools.
+## Coding Style & Naming Conventions
+
+- Python 3.11+, PEP 8, 4‑space indentation, type hints for public APIs.
+- Imports grouped: standard library / third‑party / local.
+- Modules and functions: snake_case; classes: CapWords.
+- FastMCP: expose via `FastMCP(...)` and descriptive prefixes (e.g., `skatteverket_*`).
+- Document tools/resources with module docstrings, including authoritative data source links (e.g., dataportal.se dataset IDs).
+
+## Testing Guidelines
+
+- Framework: `pytest`. Place tests under `tests/` named `test_*.py`.
+- Prefer lightweight integration tests for tools/resources; mock network with `httpx` utilities.
+- Keep tests deterministic and fast; validate Structured Output shapes.
+
+## Commit & Pull Request Guidelines
+
+- Use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`.
+- PRs must include: purpose, linked issues, how to verify, and any screenshots/logs. Update `README.md` when adding notable datasets or endpoints.
+
+## MCP/FastMCP Notes
+
+- Prefer async I/O (`async def` with `httpx.AsyncClient`) and set timeouts.
+- Wrap external calls with clear error handling; surface informative MCP errors.
+- Use Structured Output schemas for complex results so clients can validate.
+
+## Security & Configuration Tips
+
+- Do not commit secrets; read config via environment variables.
+- Validate inputs; sanitize parameters passed to external APIs.
+- Fail gracefully with actionable messages; avoid leaking stack traces to clients.
+
