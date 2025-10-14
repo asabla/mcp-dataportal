@@ -1,8 +1,21 @@
+"""
+Pydantic‑modeller för Riksdagens dokument‑API som används av MCP‑verktygen.
+
+Modellerna speglar vanliga fält i svaren från:
+- Dokumentlista: https://data.riksdagen.se/dokumentlista/
+- Dokument:      https://data.riksdagen.se/dokument/
+
+Syfte
+- Ge tydliga, strukturerade typer (Structured Output) för MCP‑klienter.
+- Behålla svenska fält‑/parameternamn som i API:t för förutsägbarhet.
+"""
+
 from typing import Annotated
 from pydantic import BaseModel, Field
 
 
 class SokData(BaseModel):
+    """Metadata om träffen (sökdata) som Riksdagens API kan bifoga."""
     brodsmula: Annotated[str | None, Field(default=None)]
     kalenderprio: Annotated[str | None, Field(default=None)]
     pari_kod: Annotated[str | None, Field(default=None)]
@@ -23,6 +36,7 @@ class SokData(BaseModel):
 
 
 class Avdelning(BaseModel):
+    """Lista av avdelningar kopplade till ett dokument."""
     avdelning: Annotated[list[str] | None, Field(default=None)]
 
 
@@ -37,15 +51,22 @@ class Avdelning(BaseModel):
 
 
 class CmsKategoriItem(BaseModel):
+    """Enskild CMS‑kategori (kod och namn)."""
     kod: Annotated[str | None, Field(default=None)]
     namn: Annotated[str | None, Field(default=None)]
 
 
 class CmsKategori(BaseModel):
+    """Container för CMS‑kategorier."""
     cmskategori: Annotated[list[CmsKategoriItem] | None, Field(default=None)]
 
 
 class Dokument(BaseModel):
+    """Ett enskilt dokument från dokumentlistan.
+
+    Schemat kan variera beroende på `doktyp`; fältlistan här är pragmatisk och
+    täcker vanliga attribut som klienter brukar nyttja.
+    """
     ardometype: Annotated[str | None, Field(default=None)]
     audio: Annotated[str | None, Field(default=None)]
     avdelningar: Annotated[Avdelning | None, Field(default=None)]
@@ -112,6 +133,11 @@ class Dokument(BaseModel):
 
 
 class DokumentLista(BaseModel):
+    """Rotobjekt för dokumentlistans träffar.
+
+    Fält med alias (t.ex. "@sida") motsvarar API:ts nycklar och kan serialiseras
+    med alias vid behov. Se `Config.allow_population_by_field_name`.
+    """
     datum: Annotated[str | None, Field(default=None, alias="@datum")]
     dokument: Annotated[list[Dokument] | None, Field(default=None, alias="dokument")]
     ms: Annotated[str | None, Field(default=None, alias="@ms")]
@@ -126,7 +152,7 @@ class DokumentLista(BaseModel):
     version: Annotated[str | None, Field(default=None, alias="@version")]
 
     class Config:
-        # This will allow population by field name or alias
+        # Tillåt population med fältnamn eller alias ("@...")
         allow_population_by_field_name = True
 
 
@@ -141,4 +167,5 @@ class DokumentDetaljResponse(BaseModel):
 
 
 class DokumentResponse(BaseModel):
+    """Top‑level svar som omsluter `dokumentlista`."""
     dokumentlista: Annotated[DokumentLista | None, Field(default=None)]

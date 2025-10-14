@@ -1,3 +1,23 @@
+"""
+MCP tool for listing Riksdagens ledamöter via dokumentlistan (avd=ledamot).
+
+This module exposes a FastMCP tool that queries the open API at
+"https://data.riksdagen.se/dokumentlista/" with avd=ledamot to retrieve
+entries representing riksdagsledamöter. The results are parsed into Pydantic
+models so MCP clients can reliably consume structured output.
+
+Data sources
+- Dokumentlista: https://data.riksdagen.se/dokumentlista/
+- Dataportal:    https://www.dataportal.se/dataservice/98_3022
+
+Notes for MCP usage
+- The tool returns a `LedamotLista` model on success or an empty string if no
+  results were found. Clients that support structured output can validate the
+  response against the models in this module.
+- Network operations are async and use httpx with a timeout.
+- Swedish identifiers are preserved to match the upstream API.
+"""
+
 from typing import Annotated
 
 import httpx
@@ -5,7 +25,7 @@ from pydantic import BaseModel, Field
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
 
-# Documentation urls
+# Documentation and dataset URLs
 API_BASE_URL = "https://data.riksdagen.se/dokumentlista/"
 LEDAMOT_BASE_URL = API_BASE_URL  # same base, but with avd=ledamot
 SWAGGER_URL = ""
@@ -15,6 +35,11 @@ ledamot_mcp = FastMCP(name="LedamotListaMCP")
 
 
 class Uppgift(BaseModel):
+    """Nyckel‑värde uppgifter knutna till en person.
+
+    Fälten och koderna kommer från Riksdagens API och kan variera.
+    """
+
     kod: Annotated[str | None, Field(default=None)]
     uppgift: Annotated[str | None, Field(default=None)]
     typ: Annotated[str | None, Field(default=None)]
@@ -24,6 +49,8 @@ class Uppgift(BaseModel):
 
 
 class PersonUppgift(BaseModel):
+    """Container för personuppgifter (lista av `Uppgift`)."""
+
     uppgift: Annotated[list[Uppgift] | None, Field(default=None)]
 
     class Config:
@@ -31,6 +58,8 @@ class PersonUppgift(BaseModel):
 
 
 class Uppdrag(BaseModel):
+    """Uppdrag/roller som en ledamot haft i olika organ."""
+
     organ_kod: Annotated[str | None, Field(default=None)]
     roll_kod: Annotated[str | None, Field(default=None)]
     roll_kod_en: Annotated[str | None, Field(default=None)]
@@ -50,6 +79,8 @@ class Uppdrag(BaseModel):
 
 
 class PersonUppdrag(BaseModel):
+    """Container för uppdrag (lista av `Uppdrag`)."""
+
     uppdrag: Annotated[list[Uppdrag] | None, Field(default=None)]
 
     class Config:
@@ -57,6 +88,8 @@ class PersonUppdrag(BaseModel):
 
 
 class AvdelningList(BaseModel):
+    """Lista av avdelningar kopplade till ett objekt."""
+
     avdelning: Annotated[list[str] | None, Field(default=None)]
 
     class Config:
@@ -64,6 +97,13 @@ class AvdelningList(BaseModel):
 
 
 class LedamotItem(BaseModel):
+    """Ett enskilt dokument/objekt från dokumentlistan för en ledamot.
+
+    Modellen är medvetet permissiv (extra = "allow") då API:t kan returnera
+    ytterligare fält. Endast fält som är vanliga/nyttiga för klienter listas
+    här för att underlätta strukturerad output.
+    """
+
     # Common dokumentlista fields
     traff: Annotated[str | None, Field(default=None)]
     domain: Annotated[str | None, Field(default=None)]
@@ -115,6 +155,12 @@ class LedamotItem(BaseModel):
 
 
 class LedamotLista(BaseModel):
+    """Rotobjekt för dokumentlistan när `avd=ledamot`.
+
+    Fält med alias (t.ex. "@sida") följer API:ts svar och exponeras som
+    Python‑fält med samma namn när modellen serialiseras med alias.
+    """
+
     ms: Annotated[str | None, Field(default=None, alias="@ms")]
     version: Annotated[str | None, Field(default=None, alias="@version")]
     q: Annotated[str | None, Field(default=None, alias="@q")]
@@ -141,6 +187,8 @@ class LedamotLista(BaseModel):
 
 
 class LedamotResponse(BaseModel):
+    """Top‑level svar som omsluter `dokumentlista`."""
+
     dokumentlista: Annotated[LedamotLista | None, Field(default=None)]
 
 
@@ -155,6 +203,11 @@ async def _make_request(
     p: int | None = None,  # page
     pagesize: int | None = None,  # optional page size (if supported)
 ) -> LedamotResponse:
+    """Anropa Riksdagens dokumentlista och returnera ett parsat svar.
+
+    Parametrarna speglar det publika MCP‑verktyget och skickas vidare som
+    query‑parametrar. Vid HTTP‑fel kastas ett undantag från `httpx`.
+    """
     params: dict[str, str] = {
         "avd": "ledamot",
         "sort": sort,
@@ -188,28 +241,42 @@ async def _make_request(
         return LedamotResponse(**data)
 
 
-@ledamot_mcp.tool
+@ledamot_mcp.tool(
+    name="riksdagen_ledamot_list",
+    description=(
+        "Listar poster från Riksdagens dokumentlista för avd=ledamot. "
+        "Använd för att söka efter ledamöter och deras metadata."
+    ),
+)
 async def list_members_ledamot(
     ctx: Context,
-    sok: str | None = None,  # free-text
-    datum: str | None = None,  # from-date YYYY-MM-DD
-    tom: str | None = None,  # to-date   YYYY-MM-DD
+    sok: str | None,  # free-text
+    datum: str | None,  # from-date YYYY-MM-DD
+    tom: str | None,  # to-date   YYYY-MM-DD
+    p: int | None,  # page
+    pagesize: int | None,  # optional page size (if supported)
     sort: str = "rel",
     sortorder: str = "desc",
-    p: int | None = None,  # page
-    pagesize: int | None = None,  # optional page size (if supported)
 ) -> LedamotLista | str:
-    """
-    List entries from Riksdagens 'dokumentlista' for avd=ledamot.
+    """Lista ledamöter via dokumentlistan (avd=ledamot) som MCP‑verktyg.
 
-    Args:
-        sok:        Free-text query (e.g., name, party).
-        datum:      From-date (YYYY-MM-DD).
-        tom:        To-date   (YYYY-MM-DD).
-        sort:       Sort field (default 'rel').
-        sortorder:  'asc' or 'desc' (default 'desc').
-        p:          Page number (1-based).
-        pagesize:   Page size (if supported by the endpoint).
+    Parametrar
+    - `sok`: Fritext (namn, parti, m.m.).
+    - `datum`: Från‑datum i format `YYYY-MM-DD`.
+    - `tom`: Till‑datum i format `YYYY-MM-DD`.
+    - `sort`: Sorteringsfält (t.ex. `rel`).
+    - `sortorder`: `asc` eller `desc` (standard `desc`).
+    - `p`: Sidnummer (1‑baserat).
+    - `pagesize`: Antal resultat per sida om endpointen stödjer det.
+
+    Returnerar
+    - `LedamotLista` vid träffar, annars tom sträng om inga poster hittas.
+
+    MCP‑kontext
+    - Funktionens annoteringar och Pydantic‑modeller möjliggör strukturerad
+      output i klienter som validerar svarens form.
+    - `ctx` används för att logga informations‑, varnings‑ och debug‑meddelanden
+      till MCP‑klienten.
     """
     await ctx.info(
         f"info: Getting ledamöter (sok={sok!r}, datum={datum!r}, tom={tom!r}, "

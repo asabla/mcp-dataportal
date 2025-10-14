@@ -1,3 +1,23 @@
+"""
+MCP‑verktyg för att lista och hämta kalenderhändelser från Riksdagen.
+
+Detta modul definierar två FastMCP‑verktyg:
+- list_kalender_handelser: listar händelser via dokumentlistan (avd=kalender)
+- fetch_kalender_handelse: hämtar en enskild händelse/dokument i text/html/json
+
+Modulen använder Riksdagens öppna API och returnerar Pydantic‑modeller
+(`DokumentLista`, `DokumentDetaljResponse`) för strukturerad output i MCP‑klienter.
+
+Datakällor
+- Dokumentlista: https://data.riksdagen.se/dokumentlista/
+- Dokument:      https://data.riksdagen.se/dokument/
+- Dataportal:    https://www.dataportal.se/dataservice/98_3019
+
+MCP‑noteringar
+- Nätverksanrop görs asynkront med httpx och tidsgräns.
+- Svenska fält‑ och parameternamn behålls för att spegla API:t.
+"""
+
 from typing import Literal
 
 import httpx
@@ -10,7 +30,7 @@ from tools.riksdagen.models import (
     DokumentLista,
 )
 
-# Documentation urls
+# Documentation and dataset URLs
 API_BASE_URL = "https://data.riksdagen.se/dokumentlista/"
 DOCUMENT_BASE_URL = "https://data.riksdagen.se/dokument/"
 SWAGGER_URL = ""
@@ -20,9 +40,16 @@ kalender_handelser_mcp = FastMCP(name="KalenderHandelserMCP")
 
 
 def _normalize_document_url(value: str, fmt: Literal["text", "html", "json"]) -> str:
-    """
-    Accepts either a dok_id (e.g., 'HD096') or a URL (absolute or protocol-relative),
-    and returns a fully-qualified URL for the requested format.
+    """Normalisera dokumentsökväg till en fullständig URL i önskat format.
+
+    Accepterar antingen ett dok_id (t.ex. "HD096") eller en URL (absolut,
+    protokoll‑relativ eller relativ) och returnerar en URL mot
+    `https://data.riksdagen.se/dokument/` med rätt ändelse.
+
+    Exempel
+    - "HD096" + fmt="text"  → https://data.riksdagen.se/dokument/HD096.text
+    - "//data.riksdagen.se/dokument/HD096.html" + fmt="json" → …/HD096.json
+    - "/dokument/HD096.txt"  → normaliseras till ".text" och önskat format
     """
     if not value:
         raise ValueError("Missing dok_id or document URL")
@@ -65,6 +92,11 @@ async def make_request(
     sortorder: str = "desc",
     utformat: str = "json",
 ) -> DokumentResponse:
+    """Anropa dokumentlistan (avd=kalender) och returnera parsad respons.
+
+    Parametrar speglar Riksdagens API och vidarebefordras som query‑parametrar.
+    Vid HTTP‑fel kastas undantag från httpx. Normalt används `utformat=json`.
+    """
     params: dict[str, str] = {
         "avd": "kalender",
         "sort": sort,
@@ -99,7 +131,13 @@ async def make_request(
         return DokumentResponse(**data)
 
 
-@kalender_handelser_mcp.tool
+@kalender_handelser_mcp.tool(
+    name="riksdagen_kalender_list",
+    description=(
+        "Listar kalenderhändelser via Riksdagens dokumentlista (avd=kalender) "
+        "med stöd för filtrering (doktyp, rm, datum, organ, sort)."
+    ),
+)
 async def list_kalender_handelser(
     ctx: Context,
     doktyp: str | None = None,
@@ -111,18 +149,24 @@ async def list_kalender_handelser(
     sort: str = "rel",
     sortorder: str = "desc",
 ) -> DokumentLista | str:
-    """
-    List calendar events (kalenderhändelser) with optional filters.
+    """Lista kalenderhändelser med valfria filter som MCP‑verktyg.
 
-    Args:
-        doktyp:   Document type code (e.g., 'utskottsmöte').
-        sok:      Free-text query.
-        rm:       Riksmöte season, e.g. '2023/24'.
-        datum:    From-date (YYYY-MM-DD).
-        tom:      To-date   (YYYY-MM-DD).
-        organ:    Committee/organ code.
-        sort:     Sort field (default 'rel').
-        sortorder:'asc' or 'desc' (default 'desc').
+    Parametrar
+    - `doktyp`: Typkod (t.ex. utskottsmöte), enligt API:s doktyp.
+    - `sok`: Fritext.
+    - `rm`: Riksmöte, t.ex. `2023/24`.
+    - `datum`: Från‑datum `YYYY-MM-DD`.
+    - `tom`: Till‑datum `YYYY-MM-DD`.
+    - `organ`: Organ/utskott (kod).
+    - `sort`: Sorteringsfält (standard `rel`).
+    - `sortorder`: `asc` eller `desc` (standard `desc`).
+
+    Returnerar
+    - `DokumentLista` vid träffar, annars tom sträng om inga poster hittas.
+
+    MCP‑kontext
+    - Strukturerad output via Pydantic‑modeller underlättar klientvalidering.
+    - `ctx` används för loggning av info/varning/debug till MCP‑klienten.
     """
     await ctx.info(
         f"info: Getting documents (doktyp={doktyp!r}, sok={sok!r}, rm={rm!r}, "
@@ -148,24 +192,28 @@ async def list_kalender_handelser(
         return ""
 
 
-@kalender_handelser_mcp.tool
+@kalender_handelser_mcp.tool(
+    name="riksdagen_kalender_fetch",
+    description=(
+        "Hämtar en specifik kalenderhändelse/dokument i önskat format (text/html/json) "
+        "givet ett dok_id eller en URL."
+    ),
+)
 async def fetch_kalender_handelse(
     ctx: Context,
     dok_id_or_url: str,
     fmt: Literal["text", "html", "json"] = "text",
 ) -> DokumentDetaljResponse | str:
-    """
-    Fetch a specific document's content or metadata.
+    """Hämta dokumentinnehåll eller metadata för en enskild händelse.
 
-    Args:
-        dok_id_or_url: Either a dok_id like 'HD096' or a URL such as
-                       '//data.riksdagen.se/dokument/HD096.text' or
-                       '/dokument/HD096.html' or a full https URL.
-        fmt:           'text' | 'html' | 'json'. Defaults to 'text'.
+    Parametrar
+    - `dok_id_or_url`: Antingen ett `dok_id` (t.ex. `HD096`) eller en URL
+      (protokoll‑relativ/relativ/absolut) till dokumentet.
+    - `fmt`: `text` | `html` | `json` (standard `text`).
 
-    Returns:
-        - For 'text' or 'html': the response body as a string.
-        - For 'json': DokumentDetaljResponse with the parsed JSON.
+    Returnerar
+    - För `text` eller `html`: dokumentinnehållet som sträng.
+    - För `json`: `DokumentDetaljResponse` med parsat JSON‑innehåll.
     """
     try:
         url = _normalize_document_url(dok_id_or_url, fmt)
